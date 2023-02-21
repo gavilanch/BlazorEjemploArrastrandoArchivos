@@ -1,0 +1,71 @@
+﻿@page "/"
+@inject IJSRuntime JSRuntime;
+@implements IAsyncDisposable
+
+
+<PageTitle>Index</PageTitle>
+
+<div @ref="contenedorDestinoArrastre" 
+    class="contenedor-destino-arrastre @claseEncima" @ondragenter="OnDragEnter" 
+    @ondragover="OnDragEnter" @ondragleave="OnDragLeave">
+    <InputFile @ref="inputFile" multiple OnChange="OnChange" />
+</div>
+
+<div class="contenedor-imagen">
+    @foreach (var imagen in imagenes)
+    {
+        <img src="@imagen" />
+    }
+</div>
+
+@code {
+    private const int tamañoMaximoArchivo = 2 * 1024 * 1024; // 2 MB
+    private List<string> imagenes = new List<string>();
+    private string claseEncima = string.Empty;
+    private ElementReference contenedorDestinoArrastre;
+    private InputFile? inputFile;
+
+    IJSObjectReference? moduloPegarArchivo;
+    IJSObjectReference? funcionInicializarPegadoDeArchivo;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            moduloPegarArchivo = await JSRuntime
+                .InvokeAsync<IJSObjectReference>("import", "./js/pegarArchivo.js");
+
+            funcionInicializarPegadoDeArchivo = await moduloPegarArchivo
+            .InvokeAsync<IJSObjectReference>("inicializarPegadoDeArchivo", 
+            contenedorDestinoArrastre, inputFile!.Element);
+        }
+    }
+
+    void OnDragEnter(DragEventArgs e) => claseEncima = "hover";
+    void OnDragLeave(DragEventArgs e) => claseEncima = string.Empty;
+
+    async Task OnChange(InputFileChangeEventArgs e)
+    {
+        foreach (var archivo in e.GetMultipleFiles())
+        {
+            using var stream = archivo.OpenReadStream(tamañoMaximoArchivo);
+            using var ms = new MemoryStream();
+            await stream.CopyToAsync(ms);
+            imagenes.Add($"data:{archivo.ContentType};base64,{Convert.ToBase64String(ms.ToArray())}");
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (funcionInicializarPegadoDeArchivo is not null)
+        {
+            await funcionInicializarPegadoDeArchivo.InvokeVoidAsync("dispose");
+            await funcionInicializarPegadoDeArchivo.DisposeAsync();
+        }
+
+        if (moduloPegarArchivo is not null)
+        {
+            await moduloPegarArchivo.DisposeAsync();
+        }
+    }
+}
